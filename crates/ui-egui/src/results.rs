@@ -118,7 +118,14 @@ impl Plot {
             return self.flow.as_ref()?.wall_positions.get(label as usize).copied().flatten();
         }
         match self.result.kind() {
-            Kind::Fluid(f) => Some(Vec3::from(fieldcraft_engine::flow::cell_centre(f, usize::try_from(label).ok()?))),
+            Kind::Fluid(f) => {
+                let label = usize::try_from(label).ok()?;
+                // Past the cells: a face held at a temperature that is the field's extreme.
+                match label.checked_sub(f.grid.len()) {
+                    Some(k) => self.flow.as_ref()?.wall_positions.get(k).copied().flatten(),
+                    None => Some(Vec3::from(fieldcraft_engine::flow::cell_centre(f, label))),
+                }
+            }
             _ => self.node_position(label),
         }
     }
@@ -492,7 +499,13 @@ pub(crate) mod tests {
         assert!(p.contour.as_ref().unwrap().max.1 > 20.0);
         let last = p.frame().unwrap().2 - 1;
         s.execute("results.frame", &json!({"frame": 0})).unwrap();
-        assert_eq!(plot_at(&s, &base, None).unwrap().contour.as_ref().unwrap().max.1, 20.0, "the frame selector changes the temperature shown");
+        let at_rest = plot_at(&s, &base, None).unwrap();
+        let c = at_rest.contour.as_ref().unwrap();
+        let cells = &at_rest.flow.as_ref().unwrap().contour.as_ref().unwrap().values;
+        assert!(cells.iter().filter(|t| t.is_finite()).all(|t| *t == 20.0), "the frame selector changes the temperature shown");
+        // The faces are held at 60 °C from the start: the legend's maximum is a face, at a point on it.
+        assert_eq!(c.max.1, 60.0);
+        assert!(at_rest.extreme_position(c.max.0).is_some());
         s.execute("results.frame", &json!({"frame": last})).unwrap();
         s.execute("results.surface", &json!({"field": "wall_heat_flux"})).unwrap();
         let p = plot_at(&s, &base, None).unwrap();

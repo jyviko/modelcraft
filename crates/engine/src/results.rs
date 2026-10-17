@@ -722,6 +722,18 @@ impl Session {
                         out[k.as_str()] = x;
                     }
                 }
+                // A face held beyond the fluid's range is the extreme, as the legend shows it.
+                if v.contour == Some(Field::Temperature) && out["contour"]["range"].is_object() {
+                    for h in crate::flow::held_faces(self, f) {
+                        let end = json!({"body": h.body, "face": h.face, "value": h.value});
+                        let range = &mut out["contour"]["range"];
+                        if range["max"]["value"].as_f64().is_some_and(|m| h.value > m) {
+                            range["max"] = end;
+                        } else if range["min"]["value"].as_f64().is_some_and(|m| h.value < m) {
+                            range["min"] = end;
+                        }
+                    }
+                }
                 if v.contour == Some(Field::WallHeatFlux)
                     && let Ok(faces) = crate::flow::wall::faces(self, f, v.pick())
                 {
